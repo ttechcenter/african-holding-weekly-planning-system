@@ -104,12 +104,12 @@ export default function AuthPage({ onAuthenticated }: AuthPageProps) {
             
           </h2>
           
-         {/* <div className="flex justify-center items-center mb-4">
+         <div className="flex justify-center items-center mb-4">
            <img
            src="../../public/logo.png"
            alt="African Holding Groups"
            className="w-20 h-20 sm:w-24 sm:h-23 object-contain"/>
-         </div> */}
+         </div>
          <p className="text-green-200 text-sm mt-1">Weekly Planning System</p>
          <p className="text-xl font-semibold text-orange-300 tracking-widest sentencecase">Think Big, Start Small, Act Now!</p>
         </div>
