@@ -106,7 +106,7 @@ export default function AuthPage({ onAuthenticated }: AuthPageProps) {
           
          <div className="flex justify-center items-center mb-4">
            <img
-           src="/logo.png"
+           src="../../public/logo.png"
            alt="African Holding Groups"
            className="w-20 h-20 sm:w-24 sm:h-23 object-contain"/>
          </div>
