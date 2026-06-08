@@ -40,49 +40,88 @@ export default function AuthPage({ onAuthenticated }: AuthPageProps) {
   };
 
   const handleRegister = async (e: React.FormEvent) => {
-    e.preventDefault();
-    if (!fullName.trim()) {
-      setError('Please enter your full name.');
-      return;
-    }
-    setLoading(true);
-    setError('');
+  e.preventDefault();
 
+  if (!fullName.trim()) {
+    setError('Please enter your full name.');
+    return;
+  }
+
+  setLoading(true);
+  setError('');
+
+  try {
     const trimmedEmail = email.trim().toLowerCase();
-    // CEO role is determined by email — no user-selectable role
     const role = trimmedEmail === CEO_EMAIL ? 'ceo' : 'employee';
 
+    // Create Auth User
     const { data, error: signUpErr } = await supabase.auth.signUp({
       email: trimmedEmail,
       password,
     });
 
-    if (signUpErr || !data.user) {
-      setError(signUpErr?.message ?? 'Registration failed. Please try again.');
+    if (signUpErr) {
+      // If email rate limit occurs but user may already exist
+      if (
+        signUpErr.message.toLowerCase().includes('rate limit') ||
+        signUpErr.message.toLowerCase().includes('already registered')
+      ) {
+        setError(
+          'User may already exist. Try signing in instead of registering.'
+        );
+      } else {
+        setError(signUpErr.message);
+      }
+
       setLoading(false);
       return;
     }
 
+    if (!data.user) {
+      setError('User account was not created.');
+      setLoading(false);
+      return;
+    }
+
+    // Insert Profile
     const { error: profileErr } = await supabase
       .from('profiles')
-      .upsert({
-            id: data.user.id,
-            full_name: isCEOEmail ? 'CEO' : fullName.trim(),
-            email: trimmedEmail,
-            role,
-            department: isCEOEmail ? 'Executive' : department.trim(),
-    });
+      .upsert(
+        {
+          id: data.user.id,
+          full_name: isCEOEmail ? 'CEO' : fullName.trim(),
+          email: trimmedEmail,
+          department: isCEOEmail ? 'Executive' : department.trim(),
+          role,
+        },
+        {
+          onConflict: 'id',
+        }
+      );
 
-   if (profileErr) {
-  console.error(profileErr);
-  setError(profileErr.message);
-  setLoading(false);
-  return;
-}
+    if (profileErr) {
+      console.error('Profile Error:', profileErr);
+
+      // User was created anyway
+      alert(
+        'Account created successfully. Profile setup failed. Please contact administrator.'
+      );
+
+      setLoading(false);
+      return;
+    }
+
+    alert('Account created successfully!');
 
     onAuthenticated();
-    setLoading(false);
-  };
+  } catch (err: any) {
+    console.error(err);
+    setError(err.message || 'Unexpected error occurred.');
+  }
+
+  setLoading(false);
+};
+
 
   return (
     <div className="min-h-screen bg-gradient-to-br from-green-900 via-green-800 to-green-700 flex items-center justify-center p-4">
