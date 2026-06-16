@@ -12,6 +12,9 @@ import {
   Building2,
   TrendingUp,
   ClipboardList,
+  MessageSquare,
+  Send,
+  CheckCircle2,
 } from 'lucide-react';
 
 interface CEODashboardProps {
@@ -20,29 +23,22 @@ interface CEODashboardProps {
 
 function getMondayOfWeek(date: Date): string {
   const d = new Date(date);
-
   const day = d.getDay();
   const diff = d.getDate() - day + (day === 0 ? -6 : 1);
-
   d.setDate(diff);
-
   const yyyy = d.getFullYear();
   const mm = String(d.getMonth() + 1).padStart(2, '0');
   const dd = String(d.getDate()).padStart(2, '0');
-
   return `${yyyy}-${mm}-${dd}`;
 }
 
 function addWeeks(weekStart: string, n: number): string {
   const [year, month, day] = weekStart.split('-').map(Number);
-
   const d = new Date(year, month - 1, day);
   d.setDate(d.getDate() + (n * 7));
-
   const yyyy = d.getFullYear();
   const mm = String(d.getMonth() + 1).padStart(2, '0');
   const dd = String(d.getDate()).padStart(2, '0');
-
   return `${yyyy}-${mm}-${dd}`;
 }
 
@@ -67,10 +63,24 @@ export default function CEODashboard({ profile }: CEODashboardProps) {
   const [selectedWeek, setSelectedWeek] = useState(getMondayOfWeek(today));
   const [employeePlans, setEmployeePlans] = useState<Record<string, WeeklyPlan | null>>({});
   const [stats, setStats] = useState({ total: 0, plansThisWeek: 0 });
+  
+  const [ceoComment, setCeoComment] = useState('');
+  const [commentUpdatedAt, setCommentUpdatedAt] = useState<string | null>(null);
+  
+  const [buttonState, setButtonState] = useState<'idle' | 'saving' | 'saved'>('idle');
 
   useEffect(() => {
     loadEmployees();
   }, []);
+
+  useEffect(() => {
+    if (view.type === 'plan') {
+      const planRecord = view.plan as any;
+      setCeoComment(planRecord.ceo_comment ?? '');
+      setCommentUpdatedAt(planRecord.ceo_comment_at ?? null);
+      setButtonState('idle');
+    }
+  }, [view]);
 
   useEffect(() => {
     if (employees.length > 0) loadWeekStats();
@@ -128,17 +138,63 @@ export default function CEODashboard({ profile }: CEODashboardProps) {
       .eq('plan_id', plan.id)
       .order('s_no', { ascending: true });
 
-    setView({ type: 'plan', employee, plan, items: items ?? [] });
+    setView({ type: 'plan', employee, plan: plan as WeeklyPlan, items: items ?? [] });
     setLoading(false);
   };
 
   const completionRate = stats.total > 0 ? Math.round((stats.plansThisWeek / stats.total) * 100) : 0;
 
-  /* ── Employee list view ── */
+ const handleSaveComment = async () => {
+  if (!ceoComment.trim()) return;
+
+  setButtonState("saving");
+
+  const timestamp = new Date().toISOString();
+
+  const { error } = await supabase
+    .from("weekly_plans")
+    .update({
+      ceo_comment: ceoComment.trim(),
+      ceo_comment_at: timestamp,
+      ceo_comment_read_at: null,
+    })
+    .eq("id", view.plan.id);
+
+  if (error) {
+    console.error(error);
+    setButtonState("idle");
+    return;
+  }
+
+  // Update local state
+  setCommentUpdatedAt(timestamp);
+
+  setView((prev) => {
+    if (prev.type !== "plan") return prev;
+
+    return {
+      ...prev,
+      plan: {
+        ...prev.plan,
+        ceo_comment: ceoComment.trim(),
+        ceo_comment_at: timestamp,
+        ceo_comment_read_at: null,
+      },
+    };
+  });
+
+  // Show Saved!
+  setButtonState("saved");
+
+  // Return to Send Comment after 2.5 seconds
+  setTimeout(() => {
+    setButtonState("idle");
+  }, 5000);
+};
+
   if (view.type === 'list') {
     return (
       <div className="space-y-6">
-        {/* Stats */}
         <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
           <StatCard
             icon={<Users size={22} className="text-green-600" />}
@@ -160,7 +216,6 @@ export default function CEODashboard({ profile }: CEODashboardProps) {
           />
         </div>
 
-        {/* Week selector */}
         <div className="bg-white rounded-xl shadow-sm border border-gray-100 p-4 flex flex-wrap items-center justify-between gap-4">
           <div className="flex items-center gap-2">
             <Calendar size={17} className="text-green-700" />
@@ -189,7 +244,6 @@ export default function CEODashboard({ profile }: CEODashboardProps) {
           </div>
         </div>
 
-        {/* Employee list */}
         <div className="bg-white rounded-xl shadow-sm border border-gray-100 overflow-hidden">
           <div className="px-5 py-4 border-b border-gray-100 flex items-center gap-2">
             <Users size={17} className="text-green-700" />
@@ -249,7 +303,6 @@ export default function CEODashboard({ profile }: CEODashboardProps) {
     );
   }
 
-  /* ── Employee plan detail view ── */
   const backToList = () => setView({ type: 'list' });
 
   if (view.type === 'employee') {
@@ -271,10 +324,27 @@ export default function CEODashboard({ profile }: CEODashboardProps) {
     );
   }
 
-  /* view.type === 'plan' */
   return (
     <div className="space-y-6">
       <BackButton onClick={backToList} label="Back to Employees" />
+
+      <div className="bg-white rounded-xl shadow-sm border border-gray-100 p-5">
+        <div className="flex items-center justify-between">
+          <div className="flex items-center gap-3">
+            <div className="w-12 h-12 rounded-full bg-green-700 text-white flex items-center justify-center font-bold text-lg">
+              {view.employee.full_name.charAt(0).toUpperCase()}
+            </div>
+            <div>
+              <h3 className="font-bold text-gray-800">{view.employee.full_name}</h3>
+              <p className="text-sm text-gray-500">{view.employee.department}</p>
+            </div>
+          </div>
+          <div className="text-right">
+            <p className="text-xs text-gray-400">Week</p>
+            <p className="font-semibold text-gray-700">{formatWeekLabel(view.plan.week_start_date)}</p>
+          </div>
+        </div>
+      </div>
 
       <div className="bg-white rounded-xl shadow-sm border border-gray-100 overflow-hidden">
         <WeeklyPlanTable
@@ -284,6 +354,62 @@ export default function CEODashboard({ profile }: CEODashboardProps) {
           department={view.employee.department ?? ''}
           readOnly={true}
         />
+      </div>
+
+      <div className="bg-white rounded-xl shadow-sm border border-gray-100 p-5">
+        <h4 className="font-bold text-gray-800 mb-3 flex items-center gap-2">
+          <MessageSquare size={18} className="text-blue-600" />
+          CEO Feedback
+        </h4>
+        <textarea
+          value={ceoComment}
+          onChange={(e) => setCeoComment(e.target.value)}
+          className="w-full border border-gray-200 rounded-lg px-4 py-3 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent resize-none"
+          rows={3}
+          placeholder="Add feedback or comments for this employee's weekly plan..."
+        />
+        <div className="flex items-center justify-between mt-3">
+          {commentUpdatedAt && (
+            <p className="text-xs text-gray-400">
+              Last updated: {new Date(commentUpdatedAt).toLocaleDateString('en-US', {
+                weekday: 'short', month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit'
+              })}
+            </p>
+          )}
+          
+          <button
+            onClick={handleSaveComment}
+           disabled={buttonState === 'saving' || !ceoComment.trim()}
+            className={`w-full sm:w-auto flex items-center justify-center gap-2
+              px-6 py-3 rounded-xl font-semibold text-sm
+              transition-all duration-300 shadow-md
+              min-h-[48px]
+              ${
+                buttonState === "saved"
+                  ? "bg-green-600 hover:bg-green-600 text-white"
+                  : buttonState === "saving"
+                  ? "bg-amber-500 text-white cursor-not-allowed"
+                  : "bg-orange-600 hover:bg-blue-700 hover:shadow-lg hover:-translate-y-0.5 text-white disabled:bg-gray-300 disabled:cursor-not-allowed"
+              }`}
+          >
+            {buttonState === "saving" ? (
+              <>
+                <Loader2 size={18} className="animate-spin" />
+                Saving...
+              </>
+            ) : buttonState === "saved" ? (
+              <>
+                <CheckCircle2 size={18} />
+                Saved!
+              </>
+            ) : (
+              <>
+                <Send size={18} />
+                Send Comment
+              </>
+            )}
+          </button>
+        </div>
       </div>
     </div>
   );

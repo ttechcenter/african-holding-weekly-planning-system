@@ -1,6 +1,8 @@
 import React, { useEffect, useState, useCallback, useRef } from 'react';
 import { supabase } from '../lib/supabase';
 import { Profile, WeeklyPlan, PlanItem } from '../types';
+import SWOTModal from './SWOTModal';
+import ReportModal from './ReportModal';
 import WeeklyPlanTable, { formatPlanAsText } from './WeeklyPlanTable';
 import {
   ChevronLeft,
@@ -15,6 +17,9 @@ import {
   Cloud,
   Send,
   BellRing,
+  FileBarChart,
+  MessageSquare,
+  X,
 } from 'lucide-react';
 
 interface EmployeeDashboardProps {
@@ -119,6 +124,18 @@ export default function EmployeeDashboard({ profile }: EmployeeDashboardProps) {
   const [error, setError] = useState('');
   const [currentPage, setCurrentPage] = useState(1);
   const [reminderDismissed, setReminderDismissed] = useState(false);
+  const [showSWOTModal, setShowSWOTModal] = useState(false);
+  const [showReportModal, setShowReportModal] = useState(false);
+
+   const [swotData, setSwotData] = useState<{
+          strengths: string;
+          weaknesses: string;
+          opportunities: string;
+          threats: string;
+ } | null>(null);
+
+const [existingReport, setExistingReport] =
+  useState<WeeklyReport | null>(null);
 
   const debounceTimers = useRef<Map<string, ReturnType<typeof setTimeout>>>(new Map());
 
@@ -143,7 +160,58 @@ export default function EmployeeDashboard({ profile }: EmployeeDashboardProps) {
     setSaveState(err ? 'error' : 'saved');
     if (!err) setTimeout(() => setSaveState('idle'), 2000);
   }, []);
+ 
+  const removeRowForDay = async (day: string) => {
+  if (!plan) return;
 
+  // Get rows for this day and current page
+  const dayItems = items.filter(
+    (item) =>
+      item.day_of_week === day &&
+      item.page_num === currentPage
+  );
+
+  // Nothing to remove
+  if (dayItems.length === 0) return;
+
+  // Find the last row (highest s_no)
+  const lastRow = dayItems.reduce((last, current) =>
+    current.s_no > last.s_no ? current : last
+  );
+
+  // Delete from Supabase
+  const { error } = await supabase
+    .from("plan_items")
+    .delete()
+    .eq("id", lastRow.id);
+
+  if (error) {
+    console.error("Failed to delete row:", error);
+    return;
+  }
+
+  // Remove from React state
+  setItems((prev) =>
+    prev.filter((item) => item.id !== lastRow.id)
+  );
+};
+
+  const handleReportClick = async () => {
+  await saveAllNow();
+
+  if (existingReport) {
+    setSwotData({
+      strengths: existingReport.strengths,
+      weaknesses: existingReport.weaknesses,
+      opportunities: existingReport.opportunities,
+      threats: existingReport.threats,
+    });
+
+    setShowReportModal(true);
+  } else {
+    setShowSWOTModal(true);
+  }
+};
 const handleDownload = () => {
   const text = formatPlanAsText(
     items,
@@ -174,7 +242,40 @@ const handleDownload = () => {
     setError('');
     setPlan(null);
     setItems([]);
+    setExistingReport(null);
+    setShowCEOComment(true);
 
+
+    const { data: CEOreport, error: reportError } = await supabase
+  .from("weekly_plans")
+  .select("*")
+  .eq("user_id", profile.id)
+  .eq("week_start_date", currentWeek)
+  .maybeSingle();
+
+    if (reportError) {
+      console.error(reportError);
+    } else if (CEOreport) {
+      setExistingReport(CEOreport);
+
+      if (CEOreport.ceo_comment && CEOreport.ceo_comment.trim() !== "") {
+        setCEOComment(CEOreport.ceo_comment);
+        setShowCEOComment(true);
+      }
+    }
+
+    // console.log("CEO Comment:", CEOreport?.ceo_comment);
+
+    const { data: report } = await supabase
+  .from('weekly_reports')
+  .select('*')
+  .eq('user_id', profile.id)
+  .eq('week_start_date', currentWeek)
+  .maybeSingle();
+
+  if (report) {
+  setExistingReport(report);
+  }
     const { data: existingPlan, error: planErr } = await supabase
       .from('weekly_plans')
       .select('*')
@@ -345,7 +446,66 @@ const handleDownload = () => {
   const reminderUrgency = isCurrentWeek ? getReminderUrgency(currentWeek) : null;
   const pendingItems = items.filter((i) => !i.is_completed);
   const showReminder = reminderUrgency && pendingItems.length > 0 && !reminderDismissed && !!plan;
+  const [ceoComment, setCEOComment] = useState("");
+  const [showCEOComment, setShowCEOComment] = useState(false);
+  const dayStats = (() => {
+  const days = [
+    'Monday',
+    'Tuesday',
+    'Wednesday',
+    'Thursday',
+    'Friday',
+    'Saturday',
+  ];
 
+  return days.map((day) => {
+    const dayItems = items.filter((i) => i.day_of_week === day);
+
+    const total = dayItems.length;
+    const completed = dayItems.filter((i) => i.is_completed).length;
+
+    return {
+      day,
+      total,
+      completed,
+      percentage:
+        total > 0
+          ? Math.round((completed / total) * 100)
+          : 0,
+    };
+  });
+})();
+  
+  const handleSWOTSubmit = async (swot: {
+  strengths: string;
+  weaknesses: string;
+  opportunities: string;
+  threats: string;
+}) => {
+  const reportData = {
+    user_id: profile.id,
+    week_start_date: currentWeek,
+    strengths: swot.strengths,
+    weaknesses: swot.weaknesses,
+    opportunities: swot.opportunities,
+    threats: swot.threats,
+  };
+
+  const { data, error } = await supabase
+    .from('weekly_reports')
+    .upsert(reportData, {
+      onConflict: 'user_id,week_start_date',
+    })
+    .select()
+    .single();
+
+  if (!error && data) {
+    setExistingReport(data);
+  }
+
+  setSwotData(swot);
+  setShowReportModal(true);
+};
   const SaveIndicator = () => {
     if (saveState === 'idle') return null;
     return (
@@ -397,6 +557,21 @@ const handleDownload = () => {
         </div>
       )}
 
+
+
+     
+        <div className="mb-6 rounded-lg border-l-4 border-blue-600 bg-blue-50 p-4 shadow">
+          <h3 className="text-lg font-bold text-blue-800 mb-2">
+            📢 CEO Weekly Message
+          </h3>
+
+          <p className="text-gray-700 whitespace-pre-wrap">
+            {ceoComment}
+          </p>
+        </div>
+
+
+
       {/* Week navigator */}
       <div className="bg-white rounded-2xl shadow-sm border border-gray-100 overflow-hidden">
         <div className="bg-gradient-to-r from-green-800 to-green-700 px-4 py-2 flex items-center justify-between">
@@ -409,6 +584,7 @@ const handleDownload = () => {
             </span>
           )}
         </div>
+                
         <div className="flex items-stretch">
           <button
             onClick={() => setCurrentWeek(addWeeks(currentWeek, -1))}
@@ -456,7 +632,7 @@ const handleDownload = () => {
           <Loader2 size={28} className="animate-spin text-green-600" />
         </div>
       )}
-
+      
       {/* No plan */}
       {!loading && !plan && (
         <div className="bg-white rounded-2xl shadow-sm border border-dashed border-green-300 p-14 text-center">
@@ -558,20 +734,31 @@ const handleDownload = () => {
 
             {/* Add row controls */}
             <div className="px-4 py-3 bg-gray-50 border-t border-gray-100">
-              <p className="text-xs text-gray-500 font-medium mb-2">Add more rows for a specific day:</p>
+              <p className="text-xs text-gray-500 font-medium mb-2">Adjust rows for a specific day:</p>
               <div className="flex flex-wrap gap-2">
                 {WEEK_DAYS_CONFIG.map(({ day }) => (
-                  <button
-                    key={day}
-                    onClick={() => addRowForDay(day)}
-                    className={`text-xs font-medium px-3 py-1.5 rounded-lg transition-colors ${
-                      day === 'Saturday'
-                        ? 'bg-green-100 text-green-800 hover:bg-green-200'
-                        : 'bg-orange-100 text-orange-800 hover:bg-orange-200'
-                    }`}
-                  >
-                    + {day.slice(0, 3)}
-                  </button>
+                  <div key={day} className="flex items-center bg-white border border-gray-200 rounded-lg overflow-hidden shadow-sm">
+                    {/* Decrease Row Button (-) */}
+                    <button
+                      onClick={() => removeRowForDay(day)}
+                      className="text-xs font-medium px-2.5 py-1.5 transition-colors border-r border-gray-200 bg-gray-50 hover:bg-gray-100 text-gray-500 hover:text-gray-700"
+                      title={`Remove last row from ${day}`}
+                    >
+                      -
+                    </button>
+                    
+                    {/* Increase Row Button (+) */}
+                    <button
+                      onClick={() => addRowForDay(day)}
+                      className={`text-xs font-medium px-3 py-1.5 transition-colors ${
+                        day === 'Saturday'
+                          ? 'bg-green-50 text-green-800 hover:bg-green-100'
+                          : 'bg-orange-50 text-orange-800 hover:bg-orange-100'
+                      }`}
+                    >
+                      + {day.slice(0, 3)}
+                    </button>
+                  </div>
                 ))}
               </div>
             </div>
@@ -610,7 +797,13 @@ const handleDownload = () => {
                   title="Download the Plan">
                 Download
                 </button>
-                
+                <button
+          onClick={handleReportClick}
+  className="flex items-center gap-2 px-5 py-2.5 rounded-xl font-semibold text-sm bg-gradient-to-r from-purple-600 to-violet-600 hover:from-purple-700 hover:to-violet-700 text-white transition-all shadow"
+>
+  <FileBarChart size={14} />
+  Report
+</button>
                 {/* Send to Telegram */}
                 <button
                   onClick={handleSendToTelegram}
@@ -625,6 +818,30 @@ const handleDownload = () => {
           </div>
         </>
       )}
+  <SWOTModal
+  isOpen={showSWOTModal}
+  onClose={() => setShowSWOTModal(false)}
+  onSubmit={handleSWOTSubmit}
+  employeeName={profile.full_name}
+  weekLabel={formatWeekLabel(currentWeek)}
+/>
+
+{swotData && (
+  <ReportModal
+    isOpen={showReportModal}
+    onClose={() => setShowReportModal(false)}
+    swot={swotData}
+    employeeName={profile.full_name}
+    department={profile.department ?? ''}
+    weekLabel={formatWeekLabel(currentWeek)}
+    weekStart={currentWeek}
+    dayStats={dayStats}
+    totalTasks={items.length}
+    completedTasks={items.filter((i) => i.is_completed).length}
+  />
+)}
     </div>
+    
   );
+  
 }
