@@ -40,19 +40,19 @@ export default function AuthPage({ onAuthenticated }: AuthPageProps) {
     setLoading(false);
   };
 
-  const handleGoogleLogin = async () => {
-  const { error } = await supabase.auth.signInWithOAuth({
-    provider: 'google',
-    options: {
-      redirectTo: window.location.origin,
-    },
-  });
+//   const handleGoogleLogin = async () => {
+//   const { error } = await supabase.auth.signInWithOAuth({
+//     provider: 'google',
+//     options: {
+//       redirectTo: window.location.origin,
+//     },
+//   });
 
-  if (error) {
-    setError(error.message);
-  }
+//   if (error) {
+//     setError(error.message);
+//   }
   
-};
+// };
 
     const handleRegister = async (e: React.FormEvent) => {
       e.preventDefault();
@@ -268,7 +268,7 @@ export default function AuthPage({ onAuthenticated }: AuthPageProps) {
                 <><UserPlus size={16} /> Create Account</>
               )}
             </button>
-            <button
+            {/* <button
               type="button"
               onClick={handleGoogleLogin}
               className="w-full bg-white border border-gray-300 text-gray-700 font-medium py-3 rounded-lg flex items-center justify-center gap-2 hover:bg-gray-50"
@@ -279,7 +279,7 @@ export default function AuthPage({ onAuthenticated }: AuthPageProps) {
                 className="w-5 h-5"
               />
               Continue with Google
-            </button>
+            </button> */}
           </form>
         </div>
 
