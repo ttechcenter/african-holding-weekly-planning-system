@@ -117,6 +117,7 @@ export default function SWOTModal({ isOpen, onClose, onSubmit, employeeName, wee
             })}
           </div>
         </form>
+        
 
         {/* Footer */}
         <div className="border-t border-slate-200 bg-slate-50 px-6 py-4 flex items-center justify-end gap-3">

@@ -144,54 +144,57 @@ export default function CEODashboard({ profile }: CEODashboardProps) {
 
   const completionRate = stats.total > 0 ? Math.round((stats.plansThisWeek / stats.total) * 100) : 0;
 
- const handleSaveComment = async () => {
-  if (!ceoComment.trim()) return;
+  const handleSaveComment = async () => {
+  const comment = ceoComment?.trim();
 
-  setButtonState("saving");
+  if (!comment) return;
 
-  const timestamp = new Date().toISOString();
+  try {
+    setButtonState("saving");
 
-  const { error } = await supabase
-    .from("weekly_plans")
-    .update({
-      ceo_comment: ceoComment.trim(),
-      ceo_comment_at: timestamp,
-      ceo_comment_read_at: null,
-    })
-    .eq("id", view.plan.id);
+    const timestamp = new Date().toISOString();
 
-  if (error) {
-    console.error(error);
-    setButtonState("idle");
-    return;
-  }
-
-  // Update local state
-  setCommentUpdatedAt(timestamp);
-
-  setView((prev) => {
-    if (prev.type !== "plan") return prev;
-
-    return {
-      ...prev,
-      plan: {
-        ...prev.plan,
-        ceo_comment: ceoComment.trim(),
+    const { data, error } = await supabase
+      .from("weekly_plans")
+      .update({
+        ceo_comment: comment,
         ceo_comment_at: timestamp,
-        ceo_comment_read_at: null,
-      },
-    };
-  });
+      })
+      .eq("id", view.plan.id)
+      .select()
+      .single();
 
-  // Show Saved!
-  setButtonState("saved");
+    if (error) {
+      console.error("Update failed:", error);
+      setButtonState("idle");
+      return;
+    }
 
-  // Return to Send Comment after 2.5 seconds
-  setTimeout(() => {
+    setCommentUpdatedAt(timestamp);
+
+    setView((prev) => {
+      if (prev.type !== "plan") return prev;
+
+      return {
+        ...prev,
+        plan: {
+          ...prev.plan,
+          ceo_comment: comment,
+          ceo_comment_at: timestamp,
+        },
+      };
+    });
+
+    setButtonState("saved");
+
+    setTimeout(() => {
+      setButtonState("idle");
+    }, 5000);
+  } catch (err) {
+    console.error("Unexpected error:", err);
     setButtonState("idle");
-  }, 5000);
+  }
 };
-
   if (view.type === 'list') {
     return (
       <div className="space-y-6">
@@ -378,18 +381,18 @@ export default function CEODashboard({ profile }: CEODashboardProps) {
           )}
           
           <button
+            type="button"
             onClick={handleSaveComment}
-           disabled={buttonState === 'saving' || !ceoComment.trim()}
+            disabled={buttonState === "saving" || !ceoComment?.trim()}
             className={`w-full sm:w-auto flex items-center justify-center gap-2
               px-6 py-3 rounded-xl font-semibold text-sm
-              transition-all duration-300 shadow-md
-              min-h-[48px]
+              transition-all duration-300 shadow-md min-h-[48px]
               ${
                 buttonState === "saved"
-                  ? "bg-green-600 hover:bg-green-600 text-white"
+                  ? "bg-green-600 text-white"
                   : buttonState === "saving"
                   ? "bg-amber-500 text-white cursor-not-allowed"
-                  : "bg-orange-600 hover:bg-blue-700 hover:shadow-lg hover:-translate-y-0.5 text-white disabled:bg-gray-300 disabled:cursor-not-allowed"
+                  : "bg-orange-600 hover:bg-orange-700 hover:shadow-lg hover:-translate-y-0.5 text-white disabled:bg-gray-300 disabled:cursor-not-allowed"
               }`}
           >
             {buttonState === "saving" ? (

@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState,useEffect  } from 'react';
 import { supabase } from '../lib/supabase';
 import { Eye, EyeOff, Leaf, UserPlus, LogIn, AlertCircle, ShieldCheck } from 'lucide-react';
 
@@ -10,6 +10,7 @@ type Mode = 'login' | 'register';
 interface AuthPageProps {
   onAuthenticated: () => void;
 }
+
 
 export default function AuthPage({ onAuthenticated }: AuthPageProps) {
   const [mode, setMode] = useState<Mode>('login');
@@ -39,50 +40,64 @@ export default function AuthPage({ onAuthenticated }: AuthPageProps) {
     setLoading(false);
   };
 
-  const handleRegister = async (e: React.FormEvent) => {
-    e.preventDefault();
-    if (!fullName.trim()) {
-      setError('Please enter your full name.');
-      return;
-    }
-    setLoading(true);
-    setError('');
+  const handleGoogleLogin = async () => {
+  const { error } = await supabase.auth.signInWithOAuth({
+    provider: 'google',
+    options: {
+      redirectTo: window.location.origin,
+    },
+  });
 
-    const trimmedEmail = email.trim().toLowerCase();
-    // CEO role is determined by email — no user-selectable role
-    const role = trimmedEmail === CEO_EMAIL ? 'ceo' : 'employee';
+  if (error) {
+    setError(error.message);
+  }
+  
+};
 
-    const { data, error: signUpErr } = await supabase.auth.signUp({
-      email: trimmedEmail,
-      password,
-    });
+    const handleRegister = async (e: React.FormEvent) => {
+      e.preventDefault();
+      if (!fullName.trim()) {
+        setError('Please enter your full name.');
+        return;
+      }
+      setLoading(true);
+      setError('');
 
-    if (signUpErr || !data.user) {
-      setError(signUpErr?.message ?? 'Registration failed. Please try again.');
-      setLoading(false);
-      return;
-    }
+      const trimmedEmail = email.trim().toLowerCase();
+      // CEO role is determined by email — no user-selectable role
+      const role = trimmedEmail === CEO_EMAIL ? 'ceo' : 'employee';
 
-    const { error: profileErr } = await supabase
-      .from('profiles')
-      .upsert({
-            id: data.user.id,
-            full_name: isCEOEmail ? 'CEO' : fullName.trim(),
-            email: trimmedEmail,
-            role,
-            department: isCEOEmail ? 'Executive' : department.trim(),
-    });
+      const { data, error: signUpErr } = await supabase.auth.signUp({
+        email: trimmedEmail,
+        password,
+      });
 
-   if (profileErr) {
-  console.error(profileErr);
-  setError(profileErr.message);
-  setLoading(false);
-  return;
-}
+      if (signUpErr || !data.user) {
+        setError(signUpErr?.message ?? 'Registration failed. Please try again.');
+        setLoading(false);
+        return;
+      }
 
-    onAuthenticated();
+      const { error: profileErr } = await supabase
+        .from('profiles')
+        .upsert({
+              id: data.user.id,
+              full_name: isCEOEmail ? 'CEO' : fullName.trim(),
+              email: trimmedEmail,
+              role,
+              department: isCEOEmail ? 'Executive' : department.trim(),
+      });
+
+    if (profileErr) {
+    console.error(profileErr);
+    setError(profileErr.message);
     setLoading(false);
-  };
+    return;
+  }
+
+      onAuthenticated();
+      setLoading(false);
+    };
 
   return (
     <div className="min-h-screen bg-gradient-to-br from-green-900 via-green-800 to-green-700 flex items-center justify-center p-4">
@@ -118,6 +133,7 @@ export default function AuthPage({ onAuthenticated }: AuthPageProps) {
         <div className="bg-white rounded-2xl shadow-2xl overflow-hidden">
           {/* Tabs */}
           <div className="flex">
+            
             <button
               className={`flex-1 py-4 text-sm font-semibold flex items-center justify-center gap-2 transition-all ${
                 mode === 'login'
@@ -251,6 +267,18 @@ export default function AuthPage({ onAuthenticated }: AuthPageProps) {
               ) : (
                 <><UserPlus size={16} /> Create Account</>
               )}
+            </button>
+            <button
+              type="button"
+              onClick={handleGoogleLogin}
+              className="w-full bg-white border border-gray-300 text-gray-700 font-medium py-3 rounded-lg flex items-center justify-center gap-2 hover:bg-gray-50"
+            >
+              <img
+                src="https://www.svgrepo.com/show/475656/google-color.svg"
+                alt="Google"
+                className="w-5 h-5"
+              />
+              Continue with Google
             </button>
           </form>
         </div>

@@ -11,38 +11,79 @@ export default function App() {
   const [user, setUser] = useState<SupabaseUser | null>(null);
   const [profile, setProfile] = useState<Profile | null>(null);
   const [loading, setLoading] = useState(true);
-
+  const CEO_EMAIL = 'ceo@gmail.com';
+  
   const loadProfile = async (userId: string) => {
     const { data } = await supabase
       .from('profiles')
       .select('*')
       .eq('id', userId)
       .maybeSingle();
-    setProfile(data ?? null);
+    return data ?? null;
   };
 
   useEffect(() => {
-    supabase.auth.getSession().then(({ data: { session } }) => {
-      setUser(session?.user ?? null);
-      if (session?.user) {
-        loadProfile(session.user.id).finally(() => setLoading(false));
-      } else {
+    const setupUser = async (currentUser: SupabaseUser | null) => {
+      if (!currentUser) {
+        setUser(null);
+        setProfile(null);
         setLoading(false);
+        return;
+      }
+
+      setUser(currentUser);
+
+      // Try to fetch existing profile
+      let { data: existingProfile } = await supabase
+        .from('profiles')
+        .select('*')
+        .eq('id', currentUser.id)
+        .maybeSingle();
+
+      // If no profile exists, create one
+      if (!existingProfile) {
+        const email = currentUser.email?.toLowerCase() || '';
+        const { data: newProfile, error } = await supabase
+          .from('profiles')
+          .insert({
+            id: currentUser.id,
+            full_name:
+              currentUser.user_metadata.full_name ||
+              currentUser.user_metadata.name ||
+              'User',
+            email,
+            role: email === CEO_EMAIL ? 'ceo' : 'employee',
+            department: '',
+          })
+          .select('*')
+          .single();
+
+        if (!error && newProfile) {
+          existingProfile = newProfile;
+        }
+      }
+
+      setProfile(existingProfile);
+      setLoading(false);
+    };
+
+    // Initialize session check
+    supabase.auth.getSession().then(({ data: { session } }) => {
+      setupUser(session?.user ?? null);
+    });
+
+    // Listen for auth changes
+    const {
+      data: { subscription },
+    } = supabase.auth.onAuthStateChange(async (event, session) => {
+      if (event === 'SIGNED_IN' || event === 'TOKEN_REFRESHED') {
+        setupUser(session?.user ?? null);
+      } else if (event === 'SIGNED_OUT') {
+        setupUser(null);
       }
     });
 
-    const { data: listener } = supabase.auth.onAuthStateChange((_event, session) => {
-      (async () => {
-        setUser(session?.user ?? null);
-        if (session?.user) {
-          await loadProfile(session.user.id);
-        } else {
-          setProfile(null);
-        }
-      })();
-    });
-
-    return () => listener.subscription.unsubscribe();
+    return () => subscription.unsubscribe();
   }, []);
 
   const handleSignOut = async () => {
@@ -55,12 +96,12 @@ export default function App() {
     return (
       <div className="min-h-screen bg-gray-50 flex items-center justify-center">
         <div className="text-center">
-                <img
-                 src="/logo.png"
-                 alt="African Holding Groups"
-                 className="w-20 h-20 object-contain"/>
-         
-          <Loader2 size={24} className="animate-spin text-green-600 mx-auto" />
+          <img
+            src="/logo.png"
+            alt="African Holding Groups"
+            className="w-20 h-20 object-contain mx-auto"
+          />
+          <Loader2 size={24} className="animate-spin text-green-600 mx-auto mt-4" />
         </div>
       </div>
     );
@@ -70,8 +111,14 @@ export default function App() {
     return (
       <AuthPage
         onAuthenticated={async () => {
+          setLoading(true);
           const { data: { session } } = await supabase.auth.getSession();
-          if (session?.user) await loadProfile(session.user.id);
+          if (session?.user) {
+            setUser(session.user);
+            const userProfile = await loadProfile(session.user.id);
+            setProfile(userProfile);
+          }
+          setLoading(false);
         }}
       />
     );
@@ -87,11 +134,11 @@ export default function App() {
           <div className="flex items-center justify-between h-16">
             {/* Logo */}
             <div className="flex items-center gap-3">
-              <div className="w-8 h-8 bg-orange-500 rounded-lg flex items-center justify-center shadow">
+              <div className="w-8 h-8 bg-orange-500 rounded-lg flex items-center justify-center shadow overflow-hidden">
                 <img
-                 src="/logo.png"
-                 alt="African Holding Groups"
-                 className="w-20 h-20 object-contain"/>
+                  src="/logo.png"
+                  alt="African Holding Groups"
+                  className="w-full h-full object-contain"/>
               </div>
               <div className="hidden sm:block">
                 <p className="text-white font-bold text-sm leading-none tracking-wide">
@@ -117,7 +164,7 @@ export default function App() {
               {/* User info */}
               <div className="flex items-center gap-2 bg-green-800 rounded-lg px-3 py-1.5">
                 <div className="w-6 h-6 bg-orange-500 rounded-full flex items-center justify-center text-white text-xs font-bold shrink-0">
-                  {profile.full_name.charAt(0).toUpperCase()}
+                  {profile.full_name?.charAt(0).toUpperCase() || 'U'}
                 </div>
                 <span className="text-white text-sm font-medium hidden md:block max-w-32 truncate">
                   {profile.full_name}
@@ -147,7 +194,7 @@ export default function App() {
               <p className="text-green-300 text-sm mt-0.5">
                 {isCEO
                   ? 'Overview of all employee weekly plans'
-                  : `Welcome back, ${profile.full_name.split(' ')[0]}!`}
+                  : `Welcome back, ${profile.full_name?.split(' ')[0] || 'User'}!`}
               </p>
             </div>
 
@@ -174,14 +221,13 @@ export default function App() {
           <CEODashboard profile={profile} />
         ) : (
           <EmployeeDashboard profile={profile} />
-        )}
+        ) }
       </main>
 
       {/* Footer */}
       <footer className="bg-green-900 text-green-400 text-xs text-center py-3 px-4">
        Developed By: African Holding Groups - IT Department <br/>
         &copy; {new Date().getFullYear()} African Holding Groups &mdash; Internal Use Only &mdash; All Rights Reserved
-        
       </footer>
     </div>
   );

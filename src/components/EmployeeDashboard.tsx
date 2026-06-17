@@ -1,9 +1,9 @@
 import React, { useEffect, useState, useCallback, useRef } from 'react';
 import { supabase } from '../lib/supabase';
-import { Profile, WeeklyPlan, PlanItem } from '../types';
+import { Profile, WeeklyPlan, PlanItem, WeeklyReport } from '../types';
 import SWOTModal from './SWOTModal';
 import ReportModal from './ReportModal';
-import WeeklyPlanTable, { formatPlanAsText } from './WeeklyPlanTable';
+import WeeklyPlanTable,{formatPlanAsText,formatWeekRange} from './WeeklyPlanTable';
 import {
   ChevronLeft,
   ChevronRight,
@@ -212,7 +212,12 @@ const [existingReport, setExistingReport] =
     setShowSWOTModal(true);
   }
 };
+ 
 const handleDownload = () => {
+  const today = new Date();
+
+  const dateString = today.toISOString().split('T')[0]; // 2026-06-17
+
   const text = formatPlanAsText(
     items,
     currentWeek,
@@ -224,16 +229,24 @@ const handleDownload = () => {
     type: 'text/plain;charset=utf-8',
   });
 
+  const fileName = [
+    'Weekly-Plan',
+    formatWeekRange(currentWeek).replace(/[^\w\s-]/g, ''),
+    dateString,
+  ]
+    .join('-')
+    .replace(/\s+/g, '-');
+
   const url = URL.createObjectURL(blob);
 
-  const a = document.createElement('a');
-  a.href = url;
-  a.download = `WeeklyPlan-${currentWeek}.txt`;
+  const link = document.createElement('a');
+  link.href = url;
+  link.download = `${fileName}.txt`;
 
-  document.body.appendChild(a);
-  a.click();
+  document.body.appendChild(link);
+  link.click();
+  document.body.removeChild(link);
 
-  document.body.removeChild(a);
   URL.revokeObjectURL(url);
 };
 
